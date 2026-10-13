@@ -1,6 +1,7 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import { randomBytes } from 'crypto';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -17,7 +18,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const disposable = vscode.commands.registerCommand('chibicode.helloWorld', () => {
 		// The code you place here will be executed every time your command is executed
 		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from chibicode!');
+		provider.say('neutral', 'Hello! Ready to code?');
 	});
 
 	context.subscriptions.push(disposable);
@@ -26,7 +27,10 @@ export function activate(context: vscode.ExtensionContext) {
 class ChibiCodeProvider implements vscode.WebviewViewProvider{
 	constructor(private readonly extensionUri: vscode.Uri) {}
 
+	private view?: vscode.WebviewView;
+
 	resolveWebviewView(webviewView: vscode.WebviewView):void{
+		this.view = webviewView;
 		const webview = webviewView.webview;
 
 		webview.options = {
@@ -38,8 +42,18 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 		webview.html = this.getHtml(webview);
 	}
 
+	say(expression: string, text:string): void{
+		if(this.view){
+			this.view.webview.postMessage({
+				expression: expression,
+				text: text
+			});
+		}
+	}
+
 	private getHtml(webview: vscode.Webview): string {
 		const spriteUri = webview.asWebviewUri (vscode.Uri.joinPath(this.extensionUri, 'media', 'neutral_closed.png'));
+		const nonce = randomBytes(16).toString('base64');
 
 		return `<!DOCTYPE html>
 		<html lang = "en">
@@ -47,7 +61,7 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 			<meta charset = "UTF-8">
 			<meta name = "viewport" content = "width=device-width, initial-scale = 1.0">
 			<meta http-equiv="Content-Security-Policy"
-        		content="default-src 'none'; img-src ${webview.cspSource} https:; style-src 'unsafe-inline';">
+        		content="default-src 'none'; img-src ${webview.cspSource} https:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 				
 				<title>ChibiCode</title>
 
@@ -100,6 +114,14 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 						font-size: 13px;
 						line-height: 1.5;
 						overflow-wrap: anywhere;
+
+						opacity: 1;
+						transition: opacity 0.3s ease;
+					}
+
+					.bubble.hidden{
+						opacity: 0;
+						pointer-events: none;
 					}
 
 					.bubble::after{
@@ -120,8 +142,31 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 					</style>
 		</head>
 		<body>
-			<div class="bubble">Ready to code?</div>
+			<div class="bubble hidden">
+				<div id="message">Ready to code?</div>
+			</div>
+
 			<img src = "${spriteUri}" alt = "ChibiCode">
+
+			<script nonce="${nonce}">	
+			let hideTimer;
+
+			window.addEventListener('message', event => {
+				clearTimeout(hideTimer);
+
+				const data = event.data; // json data our extension sends
+				const bubble = document.querySelector('.bubble');
+				const message = document.getElementById('message');
+
+				message.textContent = data.text;
+				bubble.classList.remove('hidden');
+
+				hideTimer = setTimeout(() => {
+					bubble.classList.add('hidden');
+				}, 3000);
+			});
+		</script>
+
 		</body>
 		</html>`;			
 	}

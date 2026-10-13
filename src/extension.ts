@@ -52,6 +52,11 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 				<title>ChibiCode</title>
 
 				<style>
+					:root{
+						--bubble-bg: #fff0f6;
+						--bubble-text: #D02C55;
+						--bubble-border: #e58bb5;
+					}
 					html {
 						height: 100%;
 					}
@@ -87,9 +92,9 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 						padding: 24px 14px 14px;
 						margin-bottom: 12px;
 
-						background: var(--vscode-editorWidget-background);
-						color: var(--vscode-foreground);
-						border: 1px solid var(--vscode-sideBar-border);
+						background: var(--bubble-bg);
+						color: var(--bubble-text);
+						border: 1px solid var(--bubble-border);
 						border-radius: 12px;
 
 						font-size: 13px;
@@ -106,9 +111,9 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 						width: 14px;
 						height: 14px;
 
-						background: var(--vscode-editorWidget-background);
-						border-right: 1px solid var(--vscode-sideBar-border);
-						border-bottom: 1px solid var(--vscode-sideBar-border);
+						background: var(--bubble-bg);
+						border-right: 1px solid var(--bubble-border);
+						border-bottom: 1px solid var(--bubble-border);
 
 						transform: translateX(-50%) rotate(45deg);
 					}

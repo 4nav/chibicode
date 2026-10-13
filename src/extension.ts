@@ -52,18 +52,26 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 				<title>ChibiCode</title>
 
 				<style>
+					html {
+						height: 100%;
+					}
+
 					body{
 						margin: 0;
-						padding: 20px;
+						min-height: 100vh;
+						box-sizing: border-box;
+						padding: 20px 20px 0;
 						display: flex;
 						flex-direction: column;
 						align-items: center;
-						background: #fff0f6;
-						color: #4a3040;
-						font-family: sans-serif;
+						justify-content: flex-end;
+						background: var(--vscode-sideBar-background);
+						color: var(--vscode-sideBar-foreground);
+						font-family: var(--vscode-font-family);
 					}
 
 					img{
+						display: block;
 						width: 100%;
 						max-width: 100%;
 						height: auto;
@@ -71,13 +79,44 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 					}
 
 					.bubble{
+						position: relative;
+						box-sizing: border-box;
+						width: 100%;
+						max-width: 280px;
+						min-height: 76px;
+						padding: 24px 14px 14px;
+						margin-bottom: 12px;
+
+						background: var(--vscode-editorWidget-background);
+						color: var(--vscode-foreground);
+						border: 1px solid var(--vscode-sideBar-border);
+						border-radius: 12px;
+
+						font-size: 13px;
+						line-height: 1.5;
+						overflow-wrap: anywhere;
+					}
+
+					.bubble::after{
+						content: "";
+						position: absolute;
+						bottom: -8px;
+						left: 50%;
+
+						width: 14px;
+						height: 14px;
+
+						background: var(--vscode-editorWidget-background);
+						border-right: 1px solid var(--vscode-sideBar-border);
+						border-bottom: 1px solid var(--vscode-sideBar-border);
+
+						transform: translateX(-50%) rotate(45deg);
 					}
 					</style>
 		</head>
 		<body>
-			<h1>Knockoff Alya</h1>
-			<img src = "${spriteUri}" alt = "ChibiCode">
 			<div class="bubble">Ready to code?</div>
+			<img src = "${spriteUri}" alt = "ChibiCode">
 		</body>
 		</html>`;			
 	}

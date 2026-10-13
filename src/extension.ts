@@ -150,20 +150,39 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 
 			<script nonce="${nonce}">	
 			let hideTimer;
+			let typingTimer;
 
 			window.addEventListener('message', event => {
 				clearTimeout(hideTimer);
+				clearInterval(typingTimer);
 
 				const data = event.data; // json data our extension sends
 				const bubble = document.querySelector('.bubble');
 				const message = document.getElementById('message');
 
-				message.textContent = data.text;
+				const fullText = data.text;
+				message.textContent = '';
+
+				if (!fullText) {
+					bubble.classList.add('hidden');
+					return;
+				}
 				bubble.classList.remove('hidden');
 
-				hideTimer = setTimeout(() => {
-					bubble.classList.add('hidden');
-				}, 3000);
+				const chars = Array.from(fullText);
+				let index = 0;
+				typingTimer = setInterval(() => {
+					message.textContent += chars[index];
+					index++;
+
+					if(index >= chars.length){
+						clearInterval(typingTimer);
+
+						hideTimer = setTimeout(() => {
+							bubble.classList.add('hidden');
+						},3000);
+					}
+				},40);
 			});
 		</script>
 

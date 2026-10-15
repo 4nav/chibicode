@@ -87,16 +87,19 @@ async function setupGitIntegration(context: vscode.ExtensionContext, provider: C
 				repo.rootUri.fsPath
 			);
 
-			let prevHead = repo.state.HEAD;
+			let prevCommit = repo.state.HEAD?.commit;
+			let prevBranch = repo.state.HEAD?.name;
 
 			const disposable = repo.state.onDidChange(() => {
-				const curHead = repo.state.HEAD;
+				const curCommit = repo.state.HEAD?.commit;
+				const curBranch = repo.state.HEAD?.name;
 
-				if(curHead?.commit && prevHead?.commit && curHead.commit !== prevHead.commit && curHead.name === prevHead.name){
+				if(curCommit && curCommit !== prevCommit && curBranch === prevBranch){
 					console.log('ChibiCode: Commit detected!');
             		provider.react('commit', true);
 				}
-				prevHead = curHead;
+				prevCommit = curCommit;
+				prevBranch = curBranch;
 			});
 
 			tracked.set(repo, disposable);

@@ -37,6 +37,14 @@
       {
         "command": "chibicode.helloWorld",
         "title": "ChibiCode: Hello World"
+      },
+      {
+        "command": "chibicode.setHackatimeKey",
+        "title": "ChibiCode: Set Hackatime Key"
+      },
+      {
+        "command": "chibicode.testHackatime",
+        "title": "ChibiCode: Test Hackatime"
       }
     ]
   },

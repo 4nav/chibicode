@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import {randomBytes} from 'crypto';
 import {pick} from './dialogue';
+import { getTodayStats } from './hackatime';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -14,13 +15,68 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.registerWebviewViewProvider('chibicode-view', provider)
 	);
 
-	const disposable = vscode.commands.registerCommand('chibicode.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		provider.say('crying', 'Oh no, something went wrong!');
-	});
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			'chibicode.setHackatimeKey',
+			async() => {
+				const key = await vscode.window.showInputBox({
+					title: 'Configure Hackatime',
+					prompt: 'Paste your Hackatime API key',
+					password: true,
+					ignoreFocusOut: true
+				});
 
-	context.subscriptions.push(disposable);
+				if(key === undefined){
+					return;
+				}
+
+				if(!key.trim()){
+					vscode.window.showErrorMessage(
+						'Api Key cant be empty'
+					);
+					return;
+				}
+				await context.secrets.store(
+					'chibicode.hackatimeApiKey',
+					key.trim()
+				);
+				vscode.window.showInformationMessage(
+					'Hackatime API key saved.'
+				);
+			}
+		)
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			'chibicode.testHackatime',
+			async() => {
+				const key = await context.secrets.get(
+					'chibicode.hackatimeApiKey'
+				);
+
+				if(!key){
+					vscode.window.showWarningMessage(
+                    	'Configure your Hackatime API key first.'
+                	);
+					return;
+				}
+
+				const stats = await getTodayStats(key);
+
+				if(!stats){
+					vscode.window.showErrorMessage(
+						'Could not retrieve Hackatime stats.'
+					);
+					return;
+				}
+				vscode.window.showInformationMessage(
+					`Hackatime today: ${stats.text}`
+				);
+			}
+		)
+	);
+
 	void setupGitIntegration(context, provider);
 }
 

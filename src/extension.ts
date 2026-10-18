@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import {randomBytes} from 'crypto';
 import {pick} from './dialogue';
-import { getTodayStats } from './hackatime';
+import { getTodayStats,clearHackatimeCache,getWeeklyStats,getDailySummaries } from './hackatime';
+import { ActivityTracker } from './tracker';
+import type { ActivityState } from './tracker';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -9,7 +11,25 @@ export function activate(context: vscode.ExtensionContext) {
 
 	console.log('ChibiCode: Activated');
 
-	const provider = new ChibiCodeProvider(context.extensionUri);
+	const getHackatimeKey = () =>
+		context.secrets.get('chibicode.hackatimeApiKey');
+
+	const provider = new ChibiCodeProvider(
+		context.extensionUri,
+		getHackatimeKey
+	);
+
+	const tracker = new ActivityTracker(
+		getHackatimeKey,
+		(previous, current) => {
+			provider.handleActivityChange(previous, current);
+		}, 
+		minutes => {provider.react(minutes === 1 ? 'idleNag' : 'idleEscalation');},
+		hours => { provider.handleMilestone(hours);}
+
+	);
+
+	context.subscriptions.push(tracker);
 
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider('chibicode-view', provider)
@@ -39,7 +59,8 @@ export function activate(context: vscode.ExtensionContext) {
 				await context.secrets.store(
 					'chibicode.hackatimeApiKey',
 					key.trim()
-				);
+				);	
+				clearHackatimeCache();
 				vscode.window.showInformationMessage(
 					'Hackatime API key saved.'
 				);
@@ -62,17 +83,41 @@ export function activate(context: vscode.ExtensionContext) {
 					return;
 				}
 
-				const stats = await getTodayStats(key);
+            const today = await getTodayStats(key);
+            console.log('ChibiCode: Today response:', today);
 
-				if(!stats){
-					vscode.window.showErrorMessage(
-						'Could not retrieve Hackatime stats.'
-					);
-					return;
-				}
-				vscode.window.showInformationMessage(
-					`Hackatime today: ${stats.text}`
-				);
+            const weekly = await getWeeklyStats(key);
+            console.log('ChibiCode: Weekly response:', weekly);
+
+            const end = new Date();
+            const start = new Date();
+            start.setDate(start.getDate() - 6);
+
+            const formatDate = (date: Date) => {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            };
+
+            const summaries = await getDailySummaries(
+                key,
+                formatDate(start),
+                formatDate(end)
+            );
+
+            console.log(
+                'ChibiCode: Daily summaries response:',
+                summaries
+            );
+
+            vscode.window.showInformationMessage(
+                `Today: ${today?.text ?? 'Failed'} | ` +
+                `Weekly: ${weekly
+                    ? `${Math.round(weekly.totalSeconds / 3600 * 10) / 10} hours`
+                    : 'Failed'} | ` +
+                `Daily summaries: ${summaries?.length ?? 'Failed'} days`
+            	);
 			}
 		)
 	);
@@ -185,7 +230,7 @@ async function setupGitIntegration(context: vscode.ExtensionContext, provider: C
 }
 
 class ChibiCodeProvider implements vscode.WebviewViewProvider{
-	constructor(private readonly extensionUri: vscode.Uri) {}
+	constructor(private readonly extensionUri: vscode.Uri, private readonly getHackatimeKey: () => Thenable<string | undefined>) {}
 
 	private view?: vscode.WebviewView;
 	private greeted = false;
@@ -242,6 +287,44 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 		webview.html = this.getHtml(webview);
 	}
 
+	handleActivityChange(
+		previous: ActivityState,
+		current: ActivityState
+	): void {
+		if (current === 'coding' && previous !== 'coding') {
+			this.react('returnToWork');
+		}
+	}
+
+	handleMilestone(hours: number): void{
+		const lines: Record<number, {expression: string, text:string}> = {
+			1: {
+				expression: 'happy',
+				text: 'One hour of coding today! That is a solid start. 🎉'
+        	},
+			2: {
+				expression: 'happy',
+				text: "Two hours today! You're building real momentum! ✨"
+        	},
+			4: {
+				expression: 'happy',
+				text: "Four hours of coding today! That's a serious session. 🎉"
+			}
+		};
+		const line  = lines[hours];
+
+		if (line) {
+			const now = Date.now();
+
+			if (now - this.lastReaction < this.cooldown) {
+				return;
+			}
+
+			this.lastReaction = now;
+			this.say(line.expression, line.text);
+		}
+	}
+
 
 	say(expression: string, text:string): void{
 		console.log('ChibiCode: say() called:', expression, text);
@@ -264,18 +347,71 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 		});
 	}
 
+
+
 	react(event: string, bypassCooldown = false): void{
-		const now = Date.now();
-		
+		if(event === 'sessionStart'){
+			void this.reactSessionStart(bypassCooldown);
+			return;
+		}
+		this.reactFromBucket(event,bypassCooldown);
+	}
+	private reactFromBucket(event: string, bypassCooldown = false, context: { today?: string } = {}): void{
+		const now =  Date.now();
 
 		if(!bypassCooldown && now - this.lastReaction < this.cooldown){
 			return;
 		}
 
-		const line = pick(event);
-		console.log('ChibiCode: Reacting to event:', event, line);
+		const line = pick(event, context);
+
 		this.lastReaction = now;
-		this.say(line.expression, line.text);
+		this.say(line.expression,line.text);
+	}
+
+	private async reactSessionStart(bypassCooldown = false): Promise<void> {
+		const now = Date.now();
+		if (!bypassCooldown && now - this.lastReaction < this.cooldown) {
+			return;
+		}
+		let bucket = 'sessionStart';
+		let today: string | undefined;
+
+		try{
+			const key = await this.getHackatimeKey();
+
+			if(key){
+				let timeout: ReturnType<typeof setTimeout> | undefined; 
+
+				try{
+					const timeoutPromise = new Promise<undefined>(resolve => {timeout = setTimeout(() => resolve(undefined), 1500);});
+					const stats = await Promise.race([getTodayStats(key),timeoutPromise]);
+
+					if(stats){
+						if(stats.totalSeconds < 300){
+							bucket = 'sessionStart';
+						}
+						else if(stats.totalSeconds < 3600){
+							bucket = 'sessionStartLow';
+						}
+						else if(stats.totalSeconds < 7200){
+							bucket = 'sessionStartHigh';
+						}
+						else{
+							bucket = 'sessionStartLong';
+						}
+					}
+				}
+				finally{
+					if (timeout !== undefined) {
+						clearTimeout(timeout);
+					}
+				}
+			}
+		} catch(error){
+			console.error('ChibiCode: Could not load session stats:', error);
+		}
+		this.reactFromBucket(bucket, bypassCooldown, { today });
 	}
 
 	private getHtml(webview: vscode.Webview): string {

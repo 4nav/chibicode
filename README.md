@@ -1,17 +1,42 @@
 # ChibiCode
 
-Cute anime companion built for vscode. Inspired by alya kujou from alya sometimes hides her feelings in russian. Built with typescript for week -1 in hackclub terra. 
+A cute anime companion for VS Code that reacts to your coding activity.
 
-Features: 
 
-- Animated character: Your coding companion with multiple expressions and blinking animations.
 
-- Dialogue: Random messages that react to your activity and coding habits.
+**[Download the latest release](../../releases/latest)**
 
-- Activity tracking: Uses Hackatime stats to track coding time and detect inactivity.
+## Features
 
-- Git reactions: Celebrates your commits and coding milestones.
+- **Animated companion:** Chibi coding companion with blinking animations and multiple expressions.
+- **Dynamic dialogue:** Messages that change based on your coding activity.
+- **Activity tracking:** Uses Hackatime stats to track coding time and inactivity.
+- **Git reactions:** Reacts when you make commits.
 
-# Installation
-Download the .vsix file from Releases, then install it in VS Code using Extensions → ... → Install from VSIX
+## Installation
+
+1. Download the `.vsix` file from [Releases](../../releases).
+2. Open VS Code and go to the Extensions panel.
+3. Open the `...` menu and select **Install from VSIX...**.
+4. Select the downloaded file.
+
+## Development
+
+Requires Node.js and npm.
+
+```bash
+git clone https://github.com/4nav/chibicode.git
+cd chibicode
+npm install
+npm run compile
+```
+
+To package the extension locally:
+
+```bash
+npx vsce package
+```
+
+## Built with
+TypeScript and the VS Code Extension API.
 

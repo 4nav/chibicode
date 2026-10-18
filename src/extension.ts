@@ -4,6 +4,7 @@ import {pick} from './dialogue';
 import { getTodayStats,clearHackatimeCache,getWeeklyStats,getDailySummaries } from './hackatime';
 import { ActivityTracker } from './tracker';
 import type { ActivityState } from './tracker';
+import { getMood } from './context';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -28,6 +29,8 @@ export function activate(context: vscode.ExtensionContext) {
 		hours => { provider.handleMilestone(hours);}
 
 	);
+	provider.setTracker(tracker);
+
 
 	context.subscriptions.push(tracker);
 
@@ -233,6 +236,7 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 	constructor(private readonly extensionUri: vscode.Uri, private readonly getHackatimeKey: () => Thenable<string | undefined>) {}
 
 	private view?: vscode.WebviewView;
+	private tracker?: ActivityTracker;
 	private greeted = false;
 	private lastReaction = 0;
 	private cooldown = 8000; // 8 seconds
@@ -292,7 +296,10 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 		current: ActivityState
 	): void {
 		if (current === 'coding' && previous !== 'coding') {
-			this.react('returnToWork');
+			const snapshot = this.tracker?.getSnapshot();
+			if (snapshot && snapshot.idleSeconds >= 30){
+				this.react('returnToWork');
+			}
 		}
 	}
 
@@ -323,6 +330,10 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 			this.lastReaction = now;
 			this.say(line.expression, line.text);
 		}
+	}
+
+	setTracker(tracker: ActivityTracker): void {
+		this.tracker = tracker;
 	}
 
 
@@ -363,10 +374,18 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 			return;
 		}
 
-		const line = pick(event, context);
+		const snapshot = this.tracker?.getSnapshot();
+		const mood = snapshot? getMood(event, snapshot): undefined;
+		let today = context.today;
 
-		this.lastReaction = now;
-		this.say(line.expression,line.text);
+		if(today === undefined && snapshot?.todaySeconds !== undefined && this.tracker){
+			today = this.tracker.formatDuration(snapshot.todaySeconds);
+		}
+
+		const line = pick(event, {today,mood});
+
+    	this.lastReaction = now;
+    	this.say(line.expression, line.text);
 	}
 
 	private async reactSessionStart(bypassCooldown = false): Promise<void> {
@@ -388,6 +407,7 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 					const stats = await Promise.race([getTodayStats(key),timeoutPromise]);
 
 					if(stats){
+						today = this.tracker?.formatDuration(stats.totalSeconds);
 						if(stats.totalSeconds < 300){
 							bucket = 'sessionStart';
 						}
@@ -528,9 +548,95 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 			<script nonce="${nonce}">	
 			let hideTimer;
 			let typingTimer;
+			let blinkTimer;
+			let blinkEndTimer;
+			let isSpeaking = false;
+			let isBlinking = false;
+			let mutterTimer;
+			let mutterEndTimer;
+			let idleExpressionTimer;
+			let isMuttering = false;
+
 			
 			const sprites = ${JSON.stringify(spriteMap)};
 			const sprite = document.getElementById('sprite');
+
+			function scheduleBlink() {
+				clearTimeout(blinkTimer);
+
+				blinkTimer = setTimeout(() => {
+					const eyesAlreadyClosed = ['happy', 'hmph', 'flustered'];
+
+					if (isSpeaking || isBlinking || eyesAlreadyClosed.includes(currentExpression)) {
+						scheduleBlink();
+						return;
+					}
+
+					isBlinking = true;
+					sprite.src = sprites.happy.closed;
+
+					blinkEndTimer = setTimeout(() => {
+						isBlinking = false;
+
+						if (!isSpeaking) {
+							const current = sprites[currentExpression] ?? sprites.neutral;
+							sprite.src = current.closed;
+						}
+
+						scheduleBlink();
+					}, 120);
+				}, 2500 + Math.random() * 3500);
+			}
+
+			function scheduleMutter(){
+				clearTimeout(mutterTimer);
+				mutterTimer = setTimeout(()=>{
+					const eyesAlreadyClosed = ['happy', 'hmph', 'flustered'];
+					if(isSpeaking || isBlinking || isMuttering || eyesAlreadyClosed.includes(currentExpression)){
+						scheduleMutter();
+           				return;
+					}
+					if (Math.random() < 0.45) {
+						scheduleMutter();
+						return;
+					}
+					const expression = sprites[currentExpression] ?? sprites.neutral;
+					isMuttering = true;
+					sprite.src = expression.open;
+
+					mutterEndTimer = setTimeout(() => {
+						isMuttering = false;
+						if (!isSpeaking && !isBlinking) {
+							sprite.src = expression.closed;
+						}
+						scheduleMutter();
+					}, 150 + Math.random() * 200);
+
+				}, 3000 + Math.random() * 5000);
+			}
+
+			function scheduleIdleExpression() {
+				clearTimeout(idleExpressionTimer);
+
+				idleExpressionTimer = setTimeout(() => {
+					if (isSpeaking || isBlinking || isMuttering) {
+						scheduleIdleExpression();
+						return;
+					}
+
+					const choices = ['neutral', 'happy'];
+					const alternatives = choices.filter(
+						expression => expression !== currentExpression
+					);
+
+					currentExpression =
+						alternatives[Math.floor(Math.random() * alternatives.length)];
+
+					sprite.src = sprites[currentExpression].closed;
+
+					scheduleIdleExpression();
+				}, 8000 + Math.random() * 7000);
+			}
 
 			for(const expression of Object.values(sprites)){
 				for(const url of Object.values(expression)){
@@ -540,14 +646,33 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 			}
 
 			const vscode = acquireVsCodeApi();
+			let currentExpression = 'neutral';
+			scheduleBlink();
+			scheduleMutter();
+			scheduleIdleExpression();
 
 			window.addEventListener('message', event => {
 				console.log('ChibiCode: Webview received message:', event.data);
 				clearTimeout(hideTimer);
 				clearInterval(typingTimer);
+				clearTimeout(blinkTimer);
+				clearTimeout(blinkEndTimer);
+				clearTimeout(mutterTimer);
+				clearTimeout(mutterEndTimer);
+				clearTimeout(idleExpressionTimer);
+
+
+				isBlinking = false;
+				isMuttering = false;
+				isSpeaking = false;
 
 				const data = event.data; // json data our extension sends
 				const expression = sprites[data.expression] ?? sprites.neutral;
+				currentExpression = data.expression in sprites? data.expression:'neutral';
+				isSpeaking = true;
+				isMuttering = false;
+
+
 				sprite.src = expression.closed;
 				const bubble = document.querySelector('.bubble');
 				const message = document.getElementById('message');
@@ -556,7 +681,11 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 				message.textContent = '';
 
 				if (!fullText) {
+					isSpeaking = false;
 					bubble.classList.add('hidden');
+					scheduleBlink();
+					scheduleMutter();
+					scheduleIdleExpression();
 					return;
 				}
 				bubble.classList.remove('hidden');
@@ -575,7 +704,11 @@ class ChibiCodeProvider implements vscode.WebviewViewProvider{
 
 					if(index >= chars.length){
 						clearInterval(typingTimer);
+						isSpeaking = false;
 						sprite.src = expression.closed;
+						scheduleBlink();
+						scheduleMutter();
+						scheduleIdleExpression();
 
 						hideTimer = setTimeout(() => {
 							bubble.classList.add('hidden');

@@ -1,6 +1,7 @@
 {
   "name": "chibicode",
   "displayName": "chibicode",
+  "publisher": "unorz",
   "description": "cute anime character to help you code",
   "version": "0.0.1",
   "engines": {
